@@ -1,3 +1,48 @@
+# Contri: Expense Splitting Platform
+
+Contri is a web application designed to simplify expense splitting among friends or group members. It offers intuitive features for creating groups, tracking expenses, and managing custom splits, ensuring a seamless experience for users. Built using the MERN stack, Contri prioritizes responsiveness, security, and ease of use.
+
+---
+
+## Features
+
+### Frontend:
+- **Dynamic User Interface:** Built with **ReactJS** for a responsive and engaging user experience.
+- **State Management:** Leveraged **Redux** to handle complex state updates, ensuring a smooth workflow for users.
+- **Responsive Design:** Designed with modern CSS techniques to provide a seamless experience across devices.
+- **Expense Management:** Allows users to input expenses, select participants, and view detailed split summaries.
+- **Custom Split Functionality:** Provides the option to manually adjust expense distributions for unique scenarios.
+
+### Backend:
+- **Authentication and Authorization:** Implemented secure user login and route protection using **JWT tokens**.
+- **Scalable Architecture:** Built with **Node.js** and **Express** for robust and efficient backend services.
+- **API Design:** Developed RESTful APIs to enable seamless interaction between the frontend and backend.
+- **Middleware Usage:** Added middleware for validation, error handling, and logging.
+
+### Key Functionalities:
+- **Group Management:** Users can create groups by entering their friends' phone numbers, with invitations sent automatically.
+- **Expense Tracking:** Tracks individual and group expenses, with real-time updates on total splits.
+- **Custom Splitting:** Allows manual adjustments for scenarios like extra contributions by a member.
+- **Protected Routes:** Ensures data security with authenticated API access.
+
+---
+
+## Tech Stack
+
+- **Frontend:** ReactJS, Redux, CSS
+- **Backend:** Node.js, Express
+- **Authentication:** JWT (JSON Web Tokens)
+- **Database:** MongoDB
+
+---
+
+## Installation
+
+### Prerequisites:
+- Node.js and npm installed on your machine.
+- MongoDB server running locally or remotely.
+
+### Steps:
 1. Clone the repository:
    ```bash
    git clone https://github.com/AbhirajkarBajpai/contri.git
