@@ -1,5 +1,6 @@
 const Expense = require("../models/Expense");
 const Group = require("../models/Group");
+const redisClient = require("../../redisClient");
 
 exports.addExpense = async (req, res) => {
   try {
@@ -10,7 +11,7 @@ exports.addExpense = async (req, res) => {
     const group = await Group.findById(groupId);
     if (!group) return res.status(404).json({ message: "Group not found." });
 
-    const members = group.members.map((member) => member.toString());
+    const members = group.members.map((member) => member.memberId.toString());
 
     const isValidUsers = selectedUsers.every((userId) =>
       members.includes(userId)
@@ -47,9 +48,19 @@ exports.addExpense = async (req, res) => {
 
       if (existingSettlement) {
         if (existingSettlement.user1.toString() === userPaid.toString()) {
-          existingSettlement.amount += amount;
+          if (existingSettlement.isSettled === "Yes") {
+            existingSettlement.amount = amount;
+            existingSettlement.isSettled = "No";
+          } else {
+            existingSettlement.amount += amount;
+          }
         } else {
-          existingSettlement.amount -= amount;
+          if (existingSettlement.isSettled === "Yes") {
+            existingSettlement.amount = -amount;
+            existingSettlement.isSettled = "No";
+          } else {
+            existingSettlement.amount -= amount;
+          }
         }
       } else {
         groupSettelmentDetails.push({
@@ -77,6 +88,21 @@ exports.addExpense = async (req, res) => {
     // Add the expense to the group
     group.expenses.push(expense._id);
     await group.save();
+
+    // --- Update Redis Cache for GroupExpenseInfo ---
+    const updatedGroup = await Group.findById(groupId).populate({
+      path: "expenses",
+    });
+
+    const groupExpenseKey = `GroupExpenseInfo:${groupId}`;
+    const groupExpenseInfo = {
+      groupSettelmentDetails: updatedGroup.groupSettelmentDetails,
+      expenses: updatedGroup.expenses,
+    };
+
+    await redisClient.set(groupExpenseKey, JSON.stringify(groupExpenseInfo), {
+      EX: 1800,
+    });
 
     res.status(201).json({ message: "Expense added successfully", expense });
   } catch (error) {
@@ -133,19 +159,19 @@ function calculateSplitWithManuals(
 
 exports.getExpenseDetails = async (req, res) => {
   try {
-    const expenseId  = req.params.expenseId;
+    const expenseId = req.params.expenseId;
     const expense = await Expense.findById(expenseId);
     if (!expense) {
       return res.status(404).json({ message: "Requested Expense Not Found!" });
     }
     res.status(200).json({
       message: "Expense fetched successfully.",
-      data:{
+      data: {
         description: expense.description,
         createdBy: expense.createdBy,
         amount: expense.amount,
         splitDetails: expense.splitDetails,
-        date:expense.date,
+        date: expense.date,
       },
     });
   } catch (error) {
@@ -179,27 +205,176 @@ exports.resolveExpense = async (req, res) => {
     }
 
     // Adjust the settlement amount
-    const isPayingUserUser1 = settlement.user1.toString() === payingUserId;
-    const amountToSettle = Math.min(Math.abs(settlement.amount), amount);
+    // const isPayingUserUser1 = settlement.user1.toString() === payingUserId;
+    // const amountToSettle = Math.min(Math.abs(settlement.amount), amount);
 
-    if (isPayingUserUser1) {
-      settlement.amount -= amountToSettle;
+    if (settlement.isSettled === "No" || settlement.isSettled === "Requested") {
+      settlement.isSettled = "Yes";
     } else {
-      settlement.amount += amountToSettle;
+      return res.status(200).json({
+        message: "Settlement resolved Already!",
+      });
     }
 
     // Remove settlement if the amount becomes 0
-    if (settlement.amount === 0) {
-      group.groupSettelmentDetails = group.groupSettelmentDetails.filter(
-        (detail) => detail !== settlement
-      );
-    }
+    // if (settlement.amount === 0) {
+    //   group.groupSettelmentDetails = group.groupSettelmentDetails.filter(
+    //     (detail) => detail !== settlement
+    //   );
+    // }
 
     await group.save();
+
+    //Update Redis
+    const updatedGroup = await Group.findById(groupId);
+    const groupExpenseKey = `GroupExpenseInfo:${groupId}`;
+    const cachedCurrExpense = await redisClient.get(groupExpenseKey);
+    const currExpense = JSON.parse(cachedCurrExpense);
+    const groupExpenseInfo = {
+      expenses: currExpense.expenses,
+      groupSettelmentDetails: updatedGroup.groupSettelmentDetails,
+    };
+    await redisClient.set(groupExpenseKey, JSON.stringify(groupExpenseInfo), {
+      EX: 1800,
+    });
 
     res.status(200).json({
       message: "Settlement resolved successfully.",
       groupSettelmentDetails: group.groupSettelmentDetails,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.requestResolve = async (req, res) => {
+  try {
+    const { groupId, payingUserId, receivingUserId } = req.body;
+
+    // Fetch the group
+    const group = await Group.findById(groupId);
+    if (!group) {
+      return res.status(404).json({ message: "Group not found." });
+    }
+
+    // Check settlement details between users
+    const settlement = group.groupSettelmentDetails.find(
+      (detail) =>
+        (detail.user1.toString() === payingUserId &&
+          detail.user2.toString() === receivingUserId) ||
+        (detail.user1.toString() === receivingUserId &&
+          detail.user2.toString() === payingUserId)
+    );
+
+    if (!settlement) {
+      return res
+        .status(400)
+        .json({ message: "No settlement exists between these users." });
+    }
+
+    if (settlement.isSettled === "No") {
+      settlement.isSettled = "Requested";
+    } else {
+      return res.status(200).json({
+        message: "Settlement either resolved or requested Already!",
+      });
+    }
+
+    await group.save();
+
+    //Update Redis
+    const updatedGroup = await Group.findById(groupId);
+    const groupExpenseKey = `GroupExpenseInfo:${groupId}`;
+    const cachedCurrExpense = await redisClient.get(groupExpenseKey);
+    const currExpense = JSON.parse(cachedCurrExpense);
+    const groupExpenseInfo = {
+      expenses: currExpense.expenses,
+      groupSettelmentDetails: updatedGroup.groupSettelmentDetails,
+    };
+    await redisClient.set(groupExpenseKey, JSON.stringify(groupExpenseInfo), {
+      EX: 1800,
+    });
+
+    res.status(200).json({
+      message: "Settlement resolved requested successfully.",
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.deleteExpense = async (req, res) => {
+  try {
+    const expenseId = req.params.expenseId;
+    const expense = await Expense.findById(expenseId);
+    if (!expense) {
+      return res.status(404).json({ message: "Requested Expense Not Found!" });
+    }
+    const groupId = expense.group;
+    const group = await Group.findById(groupId);
+    if (!group) return res.status(400).json({ message: "Group Not Found" });
+    const expenseSplit = expense.splitDetails;
+    const groupSettelmentDetails = group.groupSettelmentDetails || [];
+
+    expenseSplit.forEach(({ userPaid, user2, amount }) => {
+      const existingSettlement = groupSettelmentDetails.find(
+        (settlement) =>
+          (settlement.user1.toString() === userPaid.toString() &&
+            settlement.user2.toString() === user2.toString()) ||
+          (settlement.user1.toString() === user2.toString() &&
+            settlement.user2.toString() === userPaid.toString())
+      );
+
+      if (existingSettlement) {
+        if (existingSettlement.user1.toString() === userPaid.toString()) {
+          if (
+            existingSettlement.isSettled === "Yes" ||
+            existingSettlement.isSettled === "Requested"
+          ) {
+            console.log("already Settled or requested");
+          } else {
+            existingSettlement.amount -= amount;
+          }
+        } else {
+          if (
+            existingSettlement.isSettled === "Yes" ||
+            existingSettlement.isSettled === "Requested"
+          ) {
+            console.log("already Settled or requested");
+          } else {
+            existingSettlement.amount += amount;
+          }
+        }
+      }
+    });
+
+    group.groupSettelmentDetails = groupSettelmentDetails.filter(
+      (settlement) => settlement.amount !== 0
+    );
+
+    group.expenses = group.expenses.filter(
+      (exp) => exp._id.toString() !== expense._id.toString()
+    );
+    await group.save();
+    await expense.deleteOne();
+
+    //Update Redis Cache
+    const updatedGroup = await Group.findById(groupId).populate({
+      path: "expenses",
+    });
+
+    const groupExpenseKey = `GroupExpenseInfo:${groupId}`;
+    const groupExpenseInfo = {
+      groupSettelmentDetails: updatedGroup.groupSettelmentDetails,
+      expenses: updatedGroup.expenses,
+    };
+
+    await redisClient.set(groupExpenseKey, JSON.stringify(groupExpenseInfo), {
+      EX: 1800,
+    });
+
+    res.status(200).json({
+      message: "Expense Successfully Deleted!",
     });
   } catch (error) {
     res.status(500).json({ message: error.message });

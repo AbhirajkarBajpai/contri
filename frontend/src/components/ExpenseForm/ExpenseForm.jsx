@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import styles from "./ExpenseForm.module.css";
 import { useSelector } from "react-redux";
+import { showAlert } from "../alert";
 
 const ExpenseForm = ({ groupId, onComplete, onCancel, members = [] }) => {
   const isUserLoggedIn = useSelector((state) => state.loggedInUser.value);
@@ -28,9 +29,6 @@ const ExpenseForm = ({ groupId, onComplete, onCancel, members = [] }) => {
   };
 
   const handleManualAmountChange = (member, amount) => {
-    if (amount === "") {
-      return;
-    }
     setManualAmounts((prev) => ({ ...prev, [member]: amount }));
     if (!amount) {
       setIncludeInSplit((prev) => ({ ...prev, [member]: true }));
@@ -76,12 +74,12 @@ const ExpenseForm = ({ groupId, onComplete, onCancel, members = [] }) => {
       }
       const data = await response.json();
       console.log("Expsense data:", data);
-      alert("Expense created successfully!");
+      showAlert('success', "Expense created successfully!");
       onComplete();
       onCancel();
     } catch (error) {
       console.error("Error fetching group data:", error);
-      alert("something went wrong!");
+      showAlert('error', "something went wrong!");
       onCancel();
     }
   };
@@ -125,7 +123,7 @@ const ExpenseForm = ({ groupId, onComplete, onCancel, members = [] }) => {
                 <input
                   type="number"
                   className={styles.manualInput}
-                  placeholder="Enter manual Lent(if Any)"
+                  placeholder="Enter manual Amount(if Any)"
                   value={manualAmounts[member._id] || ""}
                   onChange={(e) =>
                     handleManualAmountChange(
