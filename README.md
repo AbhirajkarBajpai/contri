@@ -18,6 +18,7 @@ Contri is a web application designed to simplify expense splitting among friends
 
 - **Authentication and Authorization:** Implemented secure user login and route protection using **JWT tokens**.
 - **Scalable Architecture:** Built with **Node.js** and **Express** for robust and efficient backend services.
+- **Efficient Caching:** Used **Redis** as an in-memory cache for optimisation, implemented CRUD operations, reducing database load, speeding up data retrieval, and improving performance.
 - **API Design:** Developed RESTful APIs to enable seamless interaction between the frontend and backend.
 - **Middleware Usage:** Added middleware for validation, error handling, and logging.
 
